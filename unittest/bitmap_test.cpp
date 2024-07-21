@@ -33,6 +33,7 @@ TEST(test_bitmap, test_bitmap)
   ASSERT_EQ(0, bitmap.next_unsetted_bit(0));
   ASSERT_EQ(-1, bitmap.next_setted_bit(0));
 
+
   for (int i = 0; i < 8; i++) {
     bitmap.set_bit(i);
     ASSERT_EQ(bitmap.get_bit(i), true);
