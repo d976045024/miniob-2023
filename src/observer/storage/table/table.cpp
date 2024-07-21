@@ -182,6 +182,45 @@ RC Table::open(const char *meta_file, const char *base_dir)
   return rc;
 }
 
+RC Table::drop(const char *base_dir)
+{
+  RC rc = sync();
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Drop table failed. table name=%s, rc=%s", table_meta_.name(), strrc(rc));
+    return rc;
+  }
+
+  // delete the meta table table_name.table
+  std::string meta_file_path = table_meta_file(base_dir, name());
+  if (unlink(meta_file_path.c_str()) != 0) {
+    LOG_ERROR("Failed to unlink table %s", name());
+    return RC::INTERNAL;
+  }
+
+  // delete the data table table_name.data
+  std::string data_file_path = table_data_file(base_dir, name());
+  if (unlink(data_file_path.c_str()) != 0) {
+    LOG_ERROR("Failed to unlink table %s", name());
+    return RC::INTERNAL;
+  }
+
+  BufferPoolManager &bpm = BufferPoolManager::instance(); 
+  bpm.close_file(data_file_path.c_str());
+
+  // delete the index table if exists
+  const int index_num = table_meta_.index_num();
+  for (int i = 0; i < index_num; i++) {
+    BplusTreeIndex *index = (BplusTreeIndex *)indexes_[i];
+    index->close();
+    std::string index_file_path = table_index_file(base_dir, name(), indexes_[i]->index_meta().name());
+    if (unlink(index_file_path.c_str()) != 0) {
+      LOG_ERROR("Failed to unlink table %s", name());
+      return RC::INTERNAL;
+    }
+  }
+  return RC::SUCCESS;
+}
+
 RC Table::insert_record(Record &record)
 {
   RC rc = RC::SUCCESS;
