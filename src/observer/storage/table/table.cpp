@@ -487,6 +487,53 @@ RC Table::delete_record(const Record &record)
   return rc;
 }
 
+RC Table::update_record(Record &record, const std::string &attr_name, const Value *value)
+{
+  RC rc = RC::SUCCESS;
+
+  // delete the old index
+  for (Index *index : indexes_) {
+    rc = index->delete_entry(record.data(), &record.rid());
+    ASSERT(RC::SUCCESS == rc, 
+           "failed to delete entry from index. table name=%s, index name=%s, rid=%s, rc=%s",
+           name(), index->index_meta().name(), record.rid().to_string().c_str(), strrc(rc)); 
+  }
+
+  // update the record
+  std::vector<Value> values;
+  const int normal_field_start_index = table_meta_.sys_field_num();
+  
+  for (int i = normal_field_start_index; i < table_meta_.field_num(); i++) {
+    const FieldMeta *field = table_meta_.field(i);
+    if (field->name() == attr_name) {
+      size_t copy_len = field->len();
+      if (field->type() == CHARS) {
+        const size_t data_len = value->length();
+        if (copy_len > data_len) {
+          copy_len = data_len + 1;
+        }
+      }
+      memcpy(record.data() + field->offset(), value->data(), copy_len);
+    }
+  }
+
+  // insert the new index
+  rc = insert_entry_of_indexes(record.data(), record.rid()); 
+  if (rc != RC::SUCCESS) {
+    RC rc2 = delete_entry_of_indexes(record.data(), record.rid(), false/*error_on_not_exists*/);
+    if (rc2 != RC::SUCCESS) {
+      LOG_ERROR("Failed to rollback index data when insert index entries failed. table name=%s, rc=%d:%s",
+                name(), rc2, strrc(rc2));
+    }
+    rc2 = record_handler_->delete_record(&record.rid());
+    if (rc2 != RC::SUCCESS) {
+      LOG_PANIC("Failed to rollback record data when insert index entries failed. table name=%s, rc=%d:%s",
+                name(), rc2, strrc(rc2));
+    }
+  }
+  return rc;
+}
+
 RC Table::insert_entry_of_indexes(const char *record, const RID &rid)
 {
   RC rc = RC::SUCCESS;
